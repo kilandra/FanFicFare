@@ -5,6 +5,7 @@ import re
 
 from bs4 import BeautifulSoup
 from ..htmlcleanup import stripHTML
+from ..base_helpers import get_mapping, normalize_character_name, normalize_tag
 from .. import exceptions as exceptions
 
 # py2 vs py3 transition
@@ -151,7 +152,7 @@ class SpiritFanfictionComAdapter(BaseSiteAdapter):
         self.story.setMetadata('description', full_text)
 
 
-        def parse_until_br(attribute, start_index, element_list):
+        def parse_until_br(attribute, start_index, element_list, mapping=None):
             # Initialize counter
             next_index = start_index
             for element in element_list[start_index:]:
@@ -168,6 +169,17 @@ class SpiritFanfictionComAdapter(BaseSiteAdapter):
                         terms = re.findall(r"[^&]+", stripHTML(element))
                         for term in terms:
                             self.story.addToList(attribute, term)
+                            character = normalize_character_name(term)[0]
+                            if character != None:
+                                self.story.addToList('beta_'+attribute, character)
+                            else:
+                                logger.debug("Character not found: %s", term)
+                                self.story.addToList('beta_'+attribute, '?.'+term)
+                    elif attribute == 'warnings':
+                        self.story.addToList(attribute, stripHTML(element))
+                        tags, relationship, characters = normalize_tag(stripHTML(element), mapping)
+                        for tag in tags or []:
+                            self.story.addToList('beta_tags', tag)
                     elif attribute == 'numWords':
                         self.story.setMetadata(attribute, stripHTML(element).replace('.',''))
                     else:
@@ -175,6 +187,19 @@ class SpiritFanfictionComAdapter(BaseSiteAdapter):
                 elif element.name == 'a':
                     if element.contents[0].name == 'strong':
                         self.story.addToList(attribute, stripHTML(element.contents[0]))
+                        # Search for calibre tags in dictionary
+                        tags, characters, relationship = normalize_tag(stripHTML(element.contents[0]), mapping)
+                        if relationship != None:
+                            # Add relationship to EPUB list and both calibre lists (full name and abbreviation)
+                            #não tem ship no site self.story.addToList('ships', relationship)
+                            self.story.addToList('beta_relationships', relationship)
+                            for tag in tags or []:
+                                self.story.addToList('beta_ships', tag)
+                            tags = []
+                        for character in characters or []:
+                            self.story.addToList('beta_characters', character)
+                        for tag in tags or []:
+                            self.story.addToList('beta_tags', tag)
                 elif element.name == 'time':
                     self.story.setMetadata(attribute, makeDate(element['datetime'][:self.datelength], self.dateformat))
             return next_index
@@ -197,6 +222,8 @@ class SpiritFanfictionComAdapter(BaseSiteAdapter):
             ('Avisos:', 'warnings')
         ]
         tag_mapping = dict(content_metadata)
+        language_tags = self.getConfigList('language_tags')[0]
+        mapping = get_mapping(language_tags)
 
         information = div_element.find(lambda tag: tag.name == 'div' and
                                        tag.get('class') == ['texto', 'espacamentoTop'] and
@@ -209,7 +236,7 @@ class SpiritFanfictionComAdapter(BaseSiteAdapter):
             stripped_tag = stripHTML(content)
 
             if stripped_tag in tag_mapping:
-                i = parse_until_br(tag_mapping[stripped_tag], i+1, info_contents)
+                i = parse_until_br(tag_mapping[stripped_tag], i+1, info_contents, mapping)
             else:
                 i += 1
 
@@ -223,7 +250,23 @@ class SpiritFanfictionComAdapter(BaseSiteAdapter):
         # Extracting last word from class name
         if classificacao_element and 'class' in classificacao_element.attrs:
             class_value = classificacao_element.attrs['class']
-            self.story.setMetadata('rating',class_value[-1].split('-')[-1])
+            rating = class_value[-1].split('-')[-1]
+
+            if rating == 'Dezoito':
+                self.story.setMetadata('rating', 'Explicit')
+            elif rating == 'Dezesseis':
+                self.story.setMetadata('rating', 'Mature')
+            elif rating == 'Quatorze':
+                self.story.setMetadata('rating', 'Teen And Up Audiences')
+            elif rating == 'Doze':
+                self.story.setMetadata('rating', 'Teen And Up Audiences')
+            elif rating == 'Dez':
+                self.story.setMetadata('rating', 'General Audiences')
+            elif rating == 'Livre':
+                self.story.setMetadata('rating', 'General Audiences')
+            else:
+                logger.debug('Rating not found: %s', rating)
+                self.story.setMetadata('rating', '?.'+rating)
 
         # Extracting text content "Gêneros" and "Avisos"
         contents = classificacao_element.find_next('div').contents
@@ -233,9 +276,11 @@ class SpiritFanfictionComAdapter(BaseSiteAdapter):
             stripped_tag = stripHTML(content)
 
             if stripped_tag in tag_mapping:
-                i = parse_until_br(tag_mapping[stripped_tag], i+1, contents)
+                i = parse_until_br(tag_mapping[stripped_tag], i+1, contents, mapping)
             else:
                 i += 1
+
+        self.story.addToList('beta_tags', 'Fanfiction')
 
     ## Normalize chapter URLs in case of title change
     def normalize_chapterurl(self,url):
@@ -281,8 +326,10 @@ class SpiritFanfictionComAdapter(BaseSiteAdapter):
         for tag in chapter_text.find_all('h2'):
             if tag.string.startswith('Notas do Autor'):
                 chaphead = self.make_soup(unicode(tag.find_next_sibling('div', {'class': 'texto texto-capitulo-notas'})))
+                chaphead.div.insert(0, chapter_dl_soup.new_tag("br"))
             elif tag.string.startswith('Notas Finais'):
                 chapfoot = self.make_soup(unicode(tag.find_next_sibling('div', {'class': 'texto texto-capitulo-notas'})))
+                chapfoot.div.insert(0, chapter_dl_soup.new_tag("br"))
             else:
                 # Apparently, not all chapters have the "Capítulo" text anymore, but it's the only other h2 in there
                 chaptext = self.make_soup(unicode(tag.find_next_sibling('div', {'class': 'texto'})))

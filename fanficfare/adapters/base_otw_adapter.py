@@ -23,6 +23,7 @@ import json
 
 from ..six import text_type as unicode
 from ..htmlcleanup import stripHTML
+from ..base_helpers import get_mapping, normalize_character_name, normalize_ship, normalize_tag
 from .. import exceptions as exceptions
 
 from .base_adapter import BaseSiteAdapter, makeDate
@@ -281,6 +282,9 @@ class BaseOTWAdapter(BaseSiteAdapter):
                     newestChapter = chapterDate
                     self.newestChapterNum = index
 
+        language_tags=self.getConfigList('language_tags')[0]
+        mapping = get_mapping(language_tags)
+
         a = metasoup.find('blockquote',{'class':'userstuff'})
         if a != None:
             a.name='div' # Change blockquote to div.
@@ -312,6 +316,20 @@ class BaseOTWAdapter(BaseSiteAdapter):
             genres = a.findAll('a',{'class':"tag"})
             for genre in genres:
                 self.story.addToList('freeformtags',genre.string)
+                # Search for calibre tags in dictionary
+                tags, characters, relationship = normalize_tag(genre.string, mapping)
+                if relationship != None:
+                    # Add relationship to EPUB list and both calibre lists (full name and abbreviation)
+                    #beta - acho que não precisa self.story.addToList('ships', relationship)
+                    self.story.addToList('beta_relationships', relationship)
+                    for tag in tags or []:
+                        self.story.addToList('beta_ships', tag)
+                    tag = None
+                for character in characters or []:
+                    self.story.addToList('beta_characters', character)
+                if relationship == None:
+                    for tag in tags or []:
+                        self.story.addToList('beta_tags', tag)
 
         a = metasoup.find('dd',{'class':"category tags"})
         if a != None:
@@ -319,24 +337,45 @@ class BaseOTWAdapter(BaseSiteAdapter):
             for genre in genres:
                 if genre != "Gen":
                     self.story.addToList('ao3categories',genre.string)
+                    # Search for calibre tags in dictionary
+                    tags, characters, relationship = normalize_tag(genre.string, mapping)
+                    for tag in tags or []:
+                        self.story.addToList('beta_tags', tag)
 
         a = metasoup.find('dd',{'class':"character tags"})
         if a != None:
             chars = a.findAll('a',{'class':"tag"})
             for char in chars:
                 self.story.addToList('characters',char.string)
+                character = normalize_character_name(char.string)[0]
+                if character != None:
+                    self.story.addToList('beta_characters',character)
+                else:
+                    logger.debug("Character not found: %s"%char.string)
+                    self.story.addToList('beta_characters','?.'+char.string)
 
         a = metasoup.find('dd',{'class':"relationship tags"})
         if a != None:
             ships = a.findAll('a',{'class':"tag"})
             for ship in ships:
                 self.story.addToList('ships',ship.string)
+                relationship, characters, tag_ship = normalize_ship(ship.string)
+                if relationship != None:
+                    if relationship:
+                        self.story.addToList('beta_relationships', relationship)
+                        self.story.addToList('beta_ships', tag_ship)
+                else:
+                    logger.debug("Relationship not found: %s"%ship.string)
+                    self.story.addToList('beta_relationships', '?.'+ship.string)
+                for character in characters or []:
+                    self.story.addToList('beta_characters', character)
 
         a = metasoup.find('dd',{'class':"collections"})
         if a != None:
             collections = a.findAll('a')
             for collection in collections:
                 self.story.addToList('collections',collection.string)
+        self.story.addToList('beta_tags', 'Fanfiction')
 
         stats = metasoup.find('dl',{'class':'stats'})
         dt = stats.findAll('dt')
@@ -499,6 +538,7 @@ class BaseOTWAdapter(BaseSiteAdapter):
                     head_notes_div.append(ulassoc)
                 if headnotes != None:
                     head_notes_div.append(headnotes)
+                    append_tag(head_notes_div,'hr')
 
         ## Can appear on every chapter
         if 'chaptersummary' not in exclude_notes:
@@ -507,6 +547,7 @@ class BaseOTWAdapter(BaseSiteAdapter):
                 chapsumm = chapsumm.find('blockquote')
                 append_tag(head_notes_div,'b',"Summary for the Chapter:")
                 head_notes_div.append(chapsumm)
+                append_tag(head_notes_div,'hr')
 
         ## Can appear on every chapter
         if 'chapterheadnotes' not in exclude_notes:
@@ -516,6 +557,7 @@ class BaseOTWAdapter(BaseSiteAdapter):
                 if chapnotes != None:
                     append_tag(head_notes_div,'b',"Notes for the Chapter:")
                     head_notes_div.append(chapnotes)
+                    append_tag(head_notes_div,'hr')
 
         text = chapter_dl_soup.find('div', {'class' : "userstuff module"})
         chtext = text.find('h3', {'class' : "landmark heading"})
@@ -529,6 +571,7 @@ class BaseOTWAdapter(BaseSiteAdapter):
             chapfoot = chapter_dl_soup.find('div', {'class' : "end notes module"})
             if chapfoot != None:
                 chapfoot = chapfoot.find('blockquote')
+                append_tag(foot_notes_div,'hr')
                 append_tag(foot_notes_div,'b',"Notes for the Chapter:")
                 foot_notes_div.append(chapfoot)
 
@@ -543,6 +586,7 @@ class BaseOTWAdapter(BaseSiteAdapter):
             if footnotes != None:
                 footnotes = footnotes.find('blockquote')
                 if footnotes:
+                    append_tag(foot_notes_div,'hr')
                     b = append_tag(foot_notes_div,'b',"Author's Note:")
                     skip_on_update_tags.append(b)
                     skip_on_update_tags.append(footnotes)

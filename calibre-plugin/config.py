@@ -1340,7 +1340,11 @@ permitted_values = {
                      'author',
                      'authorUrl',
                      'formatname',
-                     'version'
+                     'version',
+                     'beta_tags',
+                     'beta_characters',
+                     'beta_ships',
+                     'beta_relationships'
                      #,'formatext'   # not useful information.
                      #,'siteabbrev'
                      ]
@@ -1379,7 +1383,11 @@ titleLabels = {
     'formatname':_('File Format'),
     'formatext':_('File Extension'),
     'siteabbrev':_('Site Abbrev'),
-    'version':_('FanFicFare Version')
+    'version':_('FanFicFare Version'),
+    'beta_tags':_('Beta-Tags'),
+    'beta_characters':_('Beta-Characters'),
+    'beta_ships':_('Beta-Ships'),
+    'beta_relationships':_('Beta-Relationships'),
     }
 
 class CustomColumnsTab(QWidget):

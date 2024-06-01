@@ -584,6 +584,7 @@ def get_valid_keywords():
                  'max_zalgo',
                  'epub_version',
                  'prepend_section_titles',
+                 'language_tags',
                  ])
 
 # *known* entry keywords -- or rather regexps for them.

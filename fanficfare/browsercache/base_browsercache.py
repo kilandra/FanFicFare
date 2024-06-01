@@ -141,6 +141,8 @@ class BaseBrowserCache(object):
         # dependencies
         # XXX forums?
         domain = domain.replace('www.','')
+        if domain in ['static.fanfiction.com.br', '66.media.tumblr.com', 'i.pinimg.com', 'i1056.photobucket.com', 'i1320.photobucket.com', 'img138.imageshack.us', 'img541.imageshack.us', 'img842.imageshack.us', 'img11.imageshack.us', 'img402.imageshack.us', 'img543.imageshack.us', 'imageshack.us', 'fc09.deviantart.net']:
+            domain = 'fanfiction.com.br'
 
         # discard any #anchor part
         url = url.split('#')[0]

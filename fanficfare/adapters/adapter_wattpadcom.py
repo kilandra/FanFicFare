@@ -24,6 +24,7 @@ import re
 from ..six import text_type as unicode
 
 from .base_adapter import BaseSiteAdapter, makeDate
+from ..base_helpers import get_mapping, normalize_tag
 from .. import exceptions as exceptions
 logger = logging.getLogger(__name__)
 
@@ -140,13 +141,32 @@ class WattpadComAdapter(BaseSiteAdapter):
         self.setCoverImage(storyInfo['url'], storyInfo['cover'].replace('-256-','-512-'))
         self.story.setMetadata('language', storyInfo['language']['name'])
 
+        language_tags=self.getConfigList('language_tags')[0]
+        mapping = get_mapping(language_tags)
+
         # CATEGORIES
         try:
             storyCategories = [WattpadComAdapter.CATEGORY_DEFs.get(unicode(c)) for c in storyInfo['categories'] if
                                unicode(c) in WattpadComAdapter.CATEGORY_DEFs]
 
             self.story.setMetadata('category', storyCategories[0])
+            tags = normalize_tag(storyCategories[0], mapping)[0]
+            for tag in tags or []:
+                self.story.addToList('beta_tags', tag)
             self.story.setMetadata('tags', storyInfo['tags'])
+            for tag in storyInfo['tags'] or []:
+                tags, characters, relationship = normalize_tag(tag, mapping)
+                if relationship != None:
+                    # Add relationship to EPUB list and both calibre lists (full name and abbreviation)
+                    self.story.addToList('beta_relationships', relationship)
+                    for tag in tags or []:
+                        self.story.addToList('beta_ships', tag)
+                    tag = None
+                else:
+                    for tag in tags or []:
+                        self.story.addToList('beta_tags', tag)
+                for character in characters or []:
+                    self.story.addToList('beta_characters', character)
         except:
             pass
 

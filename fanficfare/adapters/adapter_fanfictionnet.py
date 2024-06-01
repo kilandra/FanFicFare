@@ -27,6 +27,7 @@ from ..six.moves.urllib.parse import urlparse
 
 from .. import exceptions as exceptions
 from ..htmlcleanup import stripHTML
+from ..base_helpers import get_mapping, normalize_character_name, normalize_ship, normalize_tag
 
 from .base_adapter import BaseSiteAdapter
 
@@ -173,6 +174,9 @@ class FanFictionNetSiteAdapter(BaseSiteAdapter):
 
         ## Pull some additional data from html.
 
+        language_tags = self.getConfigList('language_tags')[0]
+        mapping = get_mapping(language_tags)
+
         ## ffnet shows category two ways
         ## 1) class(Book, TV, Game,etc) >> category(Harry Potter, Sailor Moon, etc)
         ## 2) cat1_cat2_Crossover
@@ -204,7 +208,20 @@ class FanFictionNetSiteAdapter(BaseSiteAdapter):
         if 'Fiction' in rating: # if rating has 'Fiction ', strip that out for consistency with past.
             rating = rating[8:]
 
-        self.story.setMetadata('rating',rating)
+        #self.story.setMetadata('rating',rating)
+        if rating == 'MA':
+            self.story.setMetadata('rating', 'Explicit')
+        elif rating == 'M':
+            self.story.setMetadata('rating', 'Mature')
+        elif rating == 'T':
+            self.story.setMetadata('rating', 'Teen And Up Audiences')
+        elif rating == 'K+':
+            self.story.setMetadata('rating', 'General Audiences')
+        elif rating == 'K':
+            self.story.setMetadata('rating', 'General Audiences')
+        else:
+            logger.debug('Rating not found: %s', rating)
+            self.story.setMetadata('rating', '?.'+rating)
 
         # after Rating, the same bit of text containing id:123456 contains
         # Complete--if completed.
@@ -253,7 +270,13 @@ class FanFictionNetSiteAdapter(BaseSiteAdapter):
                 goodgenres=False
         if goodgenres:
             self.story.extendList('genre',genrelist)
+            for genre in genrelist or []:
+                tags = normalize_tag(genre, mapping)[0]
+                for tag in tags or []:
+                    self.story.addToList('beta_tags', tag)
             metalist=metalist[1:]
+
+        self.story.addToList('beta_tags', 'Fanfiction')
 
         # Updated: <span data-xutime='1368059198'>5/8</span> - Published: <span data-xutime='1278984264'>7/12/2010</span>
         # Published: <span data-xutime='1384358726'>8m ago</span>
@@ -295,10 +318,29 @@ class FanFictionNetSiteAdapter(BaseSiteAdapter):
         # with 'pairing' support, pairings are bracketed w/o comma after
         # [Caspian X, Lucy Pevensie] Edmund Pevensie, Peter Pevensie
         self.story.extendList('characters',chars_ships_text.replace('[','').replace(']',',').split(','))
+        characters_list = chars_ships_text.replace('[','').replace(']',',').split(',')
+        characters_list = list(filter(lambda x: not x.isspace() and x != '', characters_list))
+        for char in characters_list or []:
+            character = normalize_character_name(char.strip())[0]
+            if character != None:
+                self.story.addToList('beta_characters',character)
+            else:
+                logger.debug("Character not found: %s"%char.strip())
+                self.story.addToList('beta_characters','?.'+char.strip())
 
         l = chars_ships_text
         while '[' in l:
             self.story.addToList('ships',l[l.index('[')+1:l.index(']')].replace(', ','/'))
+            ship = l[l.index('[')+1:l.index(']')].replace(', ','/')
+            relationship, characters, tag_ship = normalize_ship(ship)
+            if relationship != None:
+                self.story.addToList('beta_relationships', relationship)
+                self.story.addToList('beta_ships', tag_ship)
+            else:
+                logger.debug("Relationship not found: %s"%ship)
+                self.story.addToList('beta_relationships', '?.'+ship)
+            for character in characters or []:
+                self.story.addToList('beta_characters', character)
             l = l[l.index(']')+1:]
 
         if get_cover:
